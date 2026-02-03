@@ -1,25 +1,22 @@
-import "dotenv/config";
 import express from "express";
 import jwt from "jsonwebtoken";
 import mysql from "mysql2/promise";
 
-// -------------------- Config --------------------
-const PORT = Number(process.env.PORT ?? 5175);
+// -------------------- Hardcoded config (EDIT THESE) --------------------
+// Same format as your C# `Data/Db.cs` uses.
+const MYSQL_CONNECTION_STRING =
+  "Server=188.245.158.246;Port=3306;Database=NTP;User=root;Password=wtEgR59qxb1BcaPp8XZxnC93Bg2vNvpQmOvwhQylm5Iq3HAEz5d4NoZnWI7C7mM0;SslMode=Preferred;";
 
-const MYSQL_CONNECTION_STRING = process.env.MYSQL_CONNECTION_STRING;
-if (!MYSQL_CONNECTION_STRING) {
-  throw new Error("Missing MYSQL_CONNECTION_STRING (set it in .env).");
-}
+// JWT secret hardcoded too (EDIT THIS)
+const JWT_SECRET = "CHANGE_ME_TO_A_LONG_RANDOM_SECRET_32+";
+const JWT_ISSUER = "NaprednoApi";
+const JWT_AUDIENCE = "NaprednoClients";
 
-const JWT_SECRET = process.env.JWT_SECRET ?? "DEV_ONLY_CHANGE_ME_TO_A_LONG_RANDOM_SECRET_32+";
-const JWT_ISSUER = process.env.JWT_ISSUER ?? "NaprednoApi";
-const JWT_AUDIENCE = process.env.JWT_AUDIENCE ?? "NaprednoClients";
+const PORT = 5175;
 
-// -------------------- MySQL connection (parses same style as your C# Db.cs) --------------------
+// -------------------- MySQL connection --------------------
 function parseMySqlCs(cs) {
-  // Supports: Server=...;Port=...;Database=...;User=...;Password=...;SslMode=...;
   const parts = Object.create(null);
-
   for (const chunk of cs.split(";")) {
     const [k, ...rest] = chunk.split("=");
     if (!k || rest.length === 0) continue;
@@ -32,8 +29,8 @@ function parseMySqlCs(cs) {
   const user = parts.user ?? parts.uid ?? parts.username;
   const password = parts.password ?? "";
 
-  if (!database) throw new Error("MYSQL_CONNECTION_STRING missing Database=...");
-  if (!user) throw new Error("MYSQL_CONNECTION_STRING missing User=...");
+  if (!database) throw new Error("Connection string missing Database=...");
+  if (!user) throw new Error("Connection string missing User=...");
 
   return { host, port, database, user, password };
 }
@@ -48,7 +45,6 @@ const pool = mysql.createPool({
 
 // -------------------- Auth helpers --------------------
 function signToken(user) {
-  // user: { id, username, role, city }
   return jwt.sign(
     {
       sub: String(user.id),
@@ -72,12 +68,10 @@ function requireAuth(req, res, next) {
   if (!token) return res.status(401).json({ error: "Missing bearer token" });
 
   try {
-    const decoded = jwt.verify(token, JWT_SECRET, {
+    req.user = jwt.verify(token, JWT_SECRET, {
       issuer: JWT_ISSUER,
       audience: JWT_AUDIENCE
     });
-
-    req.user = decoded; // { sub, name, role, city, iat, exp, ... }
     next();
   } catch {
     return res.status(401).json({ error: "Invalid or expired token" });
@@ -96,47 +90,32 @@ function requireRole(role) {
 const app = express();
 app.use(express.json());
 
-// Auth: login -> JWT
 app.post("/api/auth/login", async (req, res) => {
   const { username, password } = req.body ?? {};
   if (!username || !password) return res.status(400).json({ error: "username/password required" });
 
-  // Schema matches your EF model / seeder:
-  // Users: Id, Username, PasswordHash, Email, Role, City
   const [rows] = await pool.query(
     "SELECT Id, Username, PasswordHash, Email, Role, City FROM Users WHERE Username = ? LIMIT 1",
     [username]
   );
 
-  const dbUser = rows?.[0];
-  if (!dbUser) return res.status(401).json({ error: "Invalid credentials" });
+  const u = rows?.[0];
+  if (!u) return res.status(401).json({ error: "Invalid credentials" });
 
-  // DEMO: your DbSeeder.cs uses plain text password in PasswordHash ("admin"/"user")
-  // For production, replace with bcrypt verify.
-  if (dbUser.PasswordHash !== password) return res.status(401).json({ error: "Invalid credentials" });
+  // DEMO: matches your `DbSeeder.cs` where PasswordHash is plain ("admin"/"user")
+  if (u.PasswordHash !== password) return res.status(401).json({ error: "Invalid credentials" });
 
-  const token = signToken({
-    id: dbUser.Id,
-    username: dbUser.Username,
-    role: dbUser.Role,
-    city: dbUser.City
-  });
+  const token = signToken({ id: u.Id, username: u.Username, role: u.Role, city: u.City });
 
   return res.json({
     accessToken: token,
-    user: {
-      id: dbUser.Id,
-      username: dbUser.Username,
-      email: dbUser.Email,
-      role: dbUser.Role,
-      city: dbUser.City
-    }
+    user: { id: u.Id, username: u.Username, email: u.Email, role: u.Role, city: u.City }
   });
 });
 
 // Resource #1: any authenticated user
 app.get("/api/profile", requireAuth, (req, res) => {
-  return res.json({
+  res.json({
     message: "Authenticated OK",
     username: req.user.name,
     role: req.user.role,
@@ -144,16 +123,11 @@ app.get("/api/profile", requireAuth, (req, res) => {
   });
 });
 
-// Resource #2: only Admin
-app.get("/api/admin/reports", requireAuth, requireRole("Admin"), (req, res) => {
-  return res.json({ report: "Top secret admin report" });
+// Resource #2: Admin only
+app.get("/api/admin/reports", requireAuth, requireRole("Admin"), (_req, res) => {
+  res.json({ report: "Top secret admin report" });
 });
 
-// Health check (optional, no auth)
-app.get("/health", (_, res) => res.json({ ok: true }));
+app.get("/health", (_req, res) => res.json({ ok: true }));
 
-// -------------------- Start --------------------
-app.listen(PORT, () => {
-  console.log(`API running on http://localhost:${PORT}`);
-  console.log("Try: POST /api/auth/login then GET /api/profile and GET /api/admin/reports");
-});
+app.listen(PORT, () => console.log(`API running on http://localhost:${PORT}`));
