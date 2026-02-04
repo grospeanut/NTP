@@ -131,3 +131,12 @@ app.get("/api/admin/reports", requireAuth, requireRole("Admin"), (_req, res) => 
 app.get("/health", (_req, res) => res.json({ ok: true }));
 
 app.listen(PORT, () => console.log(`API running on http://localhost:${PORT}`));
+
+// List users (Admin only) - does NOT expose PasswordHash
+app.get("/api/admin/users", requireAuth, requireRole("Admin"), async (_req, res) => {
+  const [rows] = await pool.query(
+    "SELECT Id, Username, Email, Role, City FROM Users ORDER BY Id"
+  );
+
+  return res.json(rows);
+});
