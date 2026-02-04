@@ -10,7 +10,7 @@ const MYSQL_CONNECTION_STRING =
   "Server=188.245.158.246;Port=3306;Database=NTP;User=root;Password=wtEgR59qxb1BcaPp8XZxnC93Bg2vNvpQmOvwhQylm5Iq3HAEz5d4NoZnWI7C7mM0;SslMode=Preferred;";
 
 // JWT secret hardcoded too (EDIT THIS)
-const JWT_SECRET = "CHANGE_ME_TO_A_LONG_RANDOM_SECRET_32+";
+const JWT_SECRET = "wQ6rW4FcdskPAGPurjPMT8u4r4UnvaCH";
 const JWT_ISSUER = "NaprednoApi";
 const JWT_AUDIENCE = "NaprednoClients";
 
