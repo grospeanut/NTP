@@ -176,8 +176,8 @@ app.post("/api/admin/users", requireAuth, requireRole("Admin"), async (req, res)
       [String(username), String(password), String(email), String(role), String(city)]
     );
     return res.status(201).json({ id: r.insertId });
-  } catch {
-    return res.status(500).json({ error: "Failed to create user" });
+  } catch (e) {
+    return res.status(500).json({ error: "Failed to create user", detail: String(e?.message ?? e) });
   }
 });
 
@@ -207,8 +207,8 @@ app.put("/api/admin/users/:id", requireAuth, requireRole("Admin"), async (req, r
     );
     if (r.affectedRows === 0) return res.sendStatus(404);
     return res.sendStatus(204);
-  } catch {
-    return res.status(500).json({ error: "Failed to update user" });
+  } catch (e) {
+    return res.status(500).json({ error: "Failed to update user", detail: String(e?.message ?? e) });
   }
 });
 
@@ -221,8 +221,8 @@ app.delete("/api/admin/users/:id", requireAuth, requireRole("Admin"), async (req
     const [r] = await pool.query("DELETE FROM Users WHERE Id=?", [id]);
     if (r.affectedRows === 0) return res.sendStatus(404);
     return res.sendStatus(204);
-  } catch {
-    return res.status(500).json({ error: "Failed to delete user" });
+  } catch (e) {
+    return res.status(500).json({ error: "Failed to delete user", detail: String(e?.message ?? e) });
   }
 });
 
@@ -238,8 +238,8 @@ app.post("/api/locations", requireAuth, requireRole("Admin"), async (req, res) =
   try {
     const [r] = await pool.query("INSERT INTO Locations (Name, City) VALUES (?,?)", [String(name), String(city)]);
     res.status(201).json({ id: r.insertId });
-  } catch {
-    res.status(500).json({ error: "Failed to create location" });
+  } catch (e) {
+    res.status(500).json({ error: "Failed to create location", detail: String(e?.message ?? e) });
   }
 });
 
@@ -252,8 +252,8 @@ app.put("/api/locations/:id", requireAuth, requireRole("Admin"), async (req, res
     const [r] = await pool.query("UPDATE Locations SET Name=?, City=? WHERE Id=?", [String(name), String(city), id]);
     if (r.affectedRows === 0) return res.sendStatus(404);
     res.sendStatus(204);
-  } catch {
-    res.status(500).json({ error: "Failed to update location" });
+  } catch (e) {
+    res.status(500).json({ error: "Failed to update location", detail: String(e?.message ?? e) });
   }
 });
 
@@ -264,8 +264,8 @@ app.delete("/api/locations/:id", requireAuth, requireRole("Admin"), async (req, 
     const [r] = await pool.query("DELETE FROM Locations WHERE Id=?", [id]);
     if (r.affectedRows === 0) return res.sendStatus(404);
     res.sendStatus(204);
-  } catch {
-    res.status(500).json({ error: "Failed to delete location" });
+  } catch (e) {
+    res.status(500).json({ error: "Failed to delete location", detail: String(e?.message ?? e) });
   }
 });
 
@@ -294,8 +294,8 @@ app.post("/api/devices", requireAuth, requireRole("Admin"), async (req, res) => 
       ]
     );
     res.status(201).json({ id: r.insertId });
-  } catch {
-    res.status(500).json({ error: "Failed to create device" });
+  } catch (e) {
+    res.status(500).json({ error: "Failed to create device", detail: String(e?.message ?? e) });
   }
 });
 
@@ -312,8 +312,8 @@ app.put("/api/devices/:id", requireAuth, requireRole("Admin"), async (req, res) 
     );
     if (r.affectedRows === 0) return res.sendStatus(404);
     res.sendStatus(204);
-  } catch {
-    res.status(500).json({ error: "Failed to update device" });
+  } catch (e) {
+    res.status(500).json({ error: "Failed to update device", detail: String(e?.message ?? e) });
   }
 });
 
@@ -324,8 +324,8 @@ app.delete("/api/devices/:id", requireAuth, requireRole("Admin"), async (req, re
     const [r] = await pool.query("DELETE FROM Devices WHERE Id=?", [id]);
     if (r.affectedRows === 0) return res.sendStatus(404);
     res.sendStatus(204);
-  } catch {
-    res.status(500).json({ error: "Failed to delete device" });
+  } catch (e) {
+    res.status(500).json({ error: "Failed to delete device", detail: String(e?.message ?? e) });
   }
 });
 
@@ -351,8 +351,8 @@ app.post("/api/reservations", requireAuth, async (req, res) => {
       [userId, devId, startAtUtc, endAtUtc, status ?? "Created"]
     );
     res.status(201).json({ id: r.insertId });
-  } catch {
-    res.status(500).json({ error: "Failed to create reservation" });
+  } catch (e) {
+    res.status(500).json({ error: "Failed to create reservation", detail: String(e?.message ?? e) });
   }
 });
 
@@ -378,8 +378,8 @@ app.put("/api/reservations/:id", requireAuth, async (req, res) => {
     const [r] = await pool.query(sql, args);
     if (r.affectedRows === 0) return res.sendStatus(404);
     res.sendStatus(204);
-  } catch {
-    res.status(500).json({ error: "Failed to update reservation" });
+  } catch (e) {
+    res.status(500).json({ error: "Failed to update reservation", detail: String(e?.message ?? e) });
   }
 });
 
@@ -390,8 +390,8 @@ app.delete("/api/reservations/:id", requireAuth, requireRole("Admin"), async (re
     const [r] = await pool.query("DELETE FROM Reservations WHERE Id=?", [id]);
     if (r.affectedRows === 0) return res.sendStatus(404);
     res.sendStatus(204);
-  } catch {
-    res.status(500).json({ error: "Failed to delete reservation" });
+  } catch (e) {
+    res.status(500).json({ error: "Failed to delete reservation", detail: String(e?.message ?? e) });
   }
 });
 
