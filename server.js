@@ -130,7 +130,7 @@ app.post("/api/auth/login", async (req, res) => {
 });
 
 // Debug/troubleshoot: verify which DB is connected and if Users table has rows
-app.get("/api/admin/dbinfo", requireAuth, requireRole("Admin"), async (_req, res) => {
+app.get("/api/admin/dbinfo", async (_req, res) => {
   const [dbRows] = await pool.query("SELECT DATABASE() AS db");
   const [countRows] = await pool.query("SELECT COUNT(*) AS userCount FROM Users");
   res.json({ database: dbRows?.[0]?.db, userCount: countRows?.[0]?.userCount });
