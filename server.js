@@ -274,7 +274,29 @@ app.get("/api/devices", requireAuth, async (_req, res) => {
   const [rows] = await pool.query(
     "SELECT Id, LocationId, Name, Type, CapacityKg, PricePerWash, IsActive FROM Devices ORDER BY Id"
   );
-  res.json(rows);
+
+  // Normalize IsActive to a real JSON boolean (not 0/1, not "true"/"false").
+  const normalized = (rows ?? []).map((r) => {
+    const v = r?.IsActive;
+
+    // mysql2 can return TINYINT(1) as number (0/1), or sometimes Buffer depending on config.
+    let isActive;
+    if (Buffer.isBuffer(v)) {
+      isActive = v.length > 0 && v[0] !== 0;
+    } else if (typeof v === "number") {
+      isActive = v !== 0;
+    } else if (typeof v === "string") {
+      isActive = v === "1" || v.toLowerCase() === "true";
+    } else if (typeof v === "boolean") {
+      isActive = v;
+    } else {
+      isActive = true;
+    }
+
+    return { ...r, IsActive: isActive };
+  });
+
+  res.json(normalized);
 });
 
 app.post("/api/devices", requireAuth, requireRole("Admin"), async (req, res) => {
