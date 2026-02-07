@@ -354,9 +354,24 @@ app.delete("/api/devices/:id", requireAuth, requireRole("Admin"), async (req, re
 // Reservations (read for authenticated user; create for authenticated user; delete for Admin)
 app.get("/api/reservations", requireAuth, async (_req, res) => {
   const [rows] = await pool.query(
-    "SELECT Id, UserId, DeviceId, StartAtUtc, EndAtUtc, Status FROM Reservations ORDER BY StartAtUtc DESC"
+    "SELECT Id, UserId, DeviceId, StartAtUtc, DurationMinutes FROM Reservations ORDER BY StartAtUtc DESC"
   );
-  res.json(rows);
+  const normalized = (rows ?? []).map((r) => {
+    const start = new Date(r.StartAtUtc);
+    const durationMinutes = Number(r.DurationMinutes ?? 0);
+    const end = new Date(start.getTime() + durationMinutes * 60_000);
+
+    return {
+      Id: r.Id,
+      UserId: r.UserId,
+      DeviceId: r.DeviceId,
+      StartAtUtc: start.toISOString(),
+      EndAtUtc: end.toISOString(),
+      Status: "Created"
+    };
+  });
+
+  res.json(normalized);
 });
 
 app.post("/api/reservations", requireAuth, async (req, res) => {
@@ -368,9 +383,16 @@ app.post("/api/reservations", requireAuth, async (req, res) => {
   }
 
   try {
+    const start = new Date(startAtUtc);
+    const end = new Date(endAtUtc);
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end <= start) {
+      return res.status(400).json({ error: "Invalid startAtUtc/endAtUtc" });
+    }
+    const durationMinutes = Math.max(0, Math.round((end.getTime() - start.getTime()) / 60_000));
+
     const [r] = await pool.query(
-      "INSERT INTO Reservations (UserId, DeviceId, StartAtUtc, EndAtUtc, Status) VALUES (?,?,?,?,?)",
-      [userId, devId, startAtUtc, endAtUtc, status ?? "Created"]
+      "INSERT INTO Reservations (UserId, DeviceId, StartAtUtc, DurationMinutes, Note) VALUES (?,?,?,?,?)",
+      [userId, devId, startAtUtc, durationMinutes, status ?? "Created"]
     );
     res.status(201).json({ id: r.insertId });
   } catch (e) {
@@ -390,12 +412,19 @@ app.put("/api/reservations/:id", requireAuth, async (req, res) => {
   try {
     // Allow Admin to edit any reservation; normal user can edit only their own.
     const isAdmin = req.user.role === "Admin";
+    const start = new Date(startAtUtc);
+    const end = new Date(endAtUtc);
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end <= start) {
+      return res.status(400).json({ error: "Invalid startAtUtc/endAtUtc" });
+    }
+    const durationMinutes = Math.max(0, Math.round((end.getTime() - start.getTime()) / 60_000));
+
     const sql = isAdmin
-      ? "UPDATE Reservations SET StartAtUtc=?, EndAtUtc=?, Status=? WHERE Id=?"
-      : "UPDATE Reservations SET StartAtUtc=?, EndAtUtc=?, Status=? WHERE Id=? AND UserId=?";
+      ? "UPDATE Reservations SET StartAtUtc=?, DurationMinutes=?, Note=? WHERE Id=?"
+      : "UPDATE Reservations SET StartAtUtc=?, DurationMinutes=?, Note=? WHERE Id=? AND UserId=?";
     const args = isAdmin
-      ? [startAtUtc, endAtUtc, String(status), id]
-      : [startAtUtc, endAtUtc, String(status), id, userId];
+      ? [startAtUtc, durationMinutes, String(status), id]
+      : [startAtUtc, durationMinutes, String(status), id, userId];
 
     const [r] = await pool.query(sql, args);
     if (r.affectedRows === 0) return res.sendStatus(404);
