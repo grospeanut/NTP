@@ -14,7 +14,7 @@ const JWT_SECRET = "wQ6rW4FcdskPAGPurjPMT8u4r4UnvaCH";
 const JWT_ISSUER = "NaprednoApi";
 const JWT_AUDIENCE = "NaprednoClients";
 
-const PORT = 5175;
+const PORT = Number(process.env.PORT ?? 5175);
 
 // -------------------- MySQL connection --------------------
 function parseMySqlCs(cs) {
