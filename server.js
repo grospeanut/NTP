@@ -37,29 +37,6 @@ function parseMySqlCs(cs) {
   return { host, port, database, user, password };
 }
 
-async function getUsersUsernameColumnName() {
-  const [rows] = await pool.query(
-    "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME='Users' AND COLUMN_NAME IN ('Username','UserName','username','userName')"
-  );
-  const names = new Set((rows ?? []).map((r) => r.COLUMN_NAME));
-  if (names.has("Username")) return "Username";
-  if (names.has("UserName")) return "UserName";
-  if (names.has("username")) return "username";
-  if (names.has("userName")) return "userName";
-  return "Username";
-}
-
-let _usersUsernameCol;
-async function usersUsernameCol() {
-  if (_usersUsernameCol) return _usersUsernameCol;
-  try {
-    _usersUsernameCol = await getUsersUsernameColumnName();
-  } catch {
-    _usersUsernameCol = "Username";
-  }
-  return _usersUsernameCol;
-}
-
 const pool = mysql.createPool({
   ...parseMySqlCs(MYSQL_CONNECTION_STRING),
   waitForConnections: true,
@@ -425,11 +402,9 @@ app.get("/api/reservations", requireAuth, async (_req, res) => {
   const userId = toId(_req.user?.sub);
   if (!isAdmin && !userId) return res.status(401).json({ error: "Invalid token" });
 
-  const unameCol = isAdmin ? await usersUsernameCol() : null;
-
   const [rows] = isAdmin
     ? await pool.query(
-        `SELECT r.Id, r.UserId, u.${unameCol} AS Username, r.DeviceId, r.${startCol} AS StartAtUtc, r.DurationMinutes, r.Note
+        `SELECT r.Id, r.UserId, u.\`Username\` AS Username, r.DeviceId, r.${startCol} AS StartAtUtc, r.DurationMinutes, r.Note
          FROM Reservations r
          LEFT JOIN Users u ON u.Id = r.UserId
          ORDER BY r.${startCol} DESC`
