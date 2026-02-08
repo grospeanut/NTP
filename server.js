@@ -14,7 +14,7 @@ const JWT_SECRET = "wQ6rW4FcdskPAGPurjPMT8u4r4UnvaCH";
 const JWT_ISSUER = "NaprednoApi";
 const JWT_AUDIENCE = "NaprednoClients";
 
-const PORT = Number(process.env.PORT ?? 5175);
+const PORT = Number(process.env.PORT ?? 3000);
 
 // -------------------- MySQL connection --------------------
 function parseMySqlCs(cs) {
@@ -353,9 +353,19 @@ app.delete("/api/devices/:id", requireAuth, requireRole("Admin"), async (req, re
 
 // Reservations (read for authenticated user; create for authenticated user; delete for Admin)
 app.get("/api/reservations", requireAuth, async (_req, res) => {
-  const [rows] = await pool.query(
-    "SELECT Id, UserId, DeviceId, StartAtUtc, DurationMinutes FROM Reservations ORDER BY StartAtUtc DESC"
-  );
+  const isAdmin = _req.user?.role === "Admin";
+  const userId = toId(_req.user?.sub);
+  if (!isAdmin && !userId) return res.status(401).json({ error: "Invalid token" });
+
+  const [rows] = isAdmin
+    ? await pool.query(
+        "SELECT Id, UserId, DeviceId, StartAtUtc, DurationMinutes, Note FROM Reservations ORDER BY StartAtUtc DESC"
+      )
+    : await pool.query(
+        "SELECT Id, UserId, DeviceId, StartAtUtc, DurationMinutes, Note FROM Reservations WHERE UserId=? ORDER BY StartAtUtc DESC",
+        [userId]
+      );
+
   const normalized = (rows ?? []).map((r) => {
     const start = new Date(r.StartAtUtc);
     const durationMinutes = Number(r.DurationMinutes ?? 0);
@@ -367,7 +377,7 @@ app.get("/api/reservations", requireAuth, async (_req, res) => {
       DeviceId: r.DeviceId,
       StartAtUtc: start.toISOString(),
       EndAtUtc: end.toISOString(),
-      Status: "Created"
+      Status: typeof r.Note === "string" && r.Note.length > 0 ? r.Note : "Created"
     };
   });
 
@@ -383,6 +393,14 @@ app.post("/api/reservations", requireAuth, async (req, res) => {
   }
 
   try {
+    // Validate device exists and is active.
+    const [devRows] = await pool.query(
+      "SELECT Id, IsActive FROM Devices WHERE Id=? LIMIT 1",
+      [devId]
+    );
+    const dev = devRows?.[0];
+    if (!dev) return res.status(400).json({ error: "Unknown device" });
+
     const start = new Date(startAtUtc);
     const end = new Date(endAtUtc);
     if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end <= start) {
