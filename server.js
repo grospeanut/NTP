@@ -359,15 +359,15 @@ app.get("/api/reservations", requireAuth, async (_req, res) => {
 
   const [rows] = isAdmin
     ? await pool.query(
-        "SELECT Id, UserId, DeviceId, StartAtUtc, DurationMinutes, Note FROM Reservations ORDER BY StartAtUtc DESC"
+        "SELECT Id, UserId, DeviceId, StartAAtUtc, DurationMinutes, Note FROM Reservations ORDER BY StartAAtUtc DESC"
       )
     : await pool.query(
-        "SELECT Id, UserId, DeviceId, StartAtUtc, DurationMinutes, Note FROM Reservations WHERE UserId=? ORDER BY StartAtUtc DESC",
+        "SELECT Id, UserId, DeviceId, StartAAtUtc, DurationMinutes, Note FROM Reservations WHERE UserId=? ORDER BY StartAAtUtc DESC",
         [userId]
       );
 
   const normalized = (rows ?? []).map((r) => {
-    const start = new Date(r.StartAtUtc);
+    const start = new Date(r.StartAAtUtc);
     const durationMinutes = Number(r.DurationMinutes ?? 0);
     const end = new Date(start.getTime() + durationMinutes * 60_000);
 
@@ -409,7 +409,7 @@ app.post("/api/reservations", requireAuth, async (req, res) => {
     const durationMinutes = Math.max(0, Math.round((end.getTime() - start.getTime()) / 60_000));
 
     const [r] = await pool.query(
-      "INSERT INTO Reservations (UserId, DeviceId, StartAtUtc, DurationMinutes, Note) VALUES (?,?,?,?,?)",
+      "INSERT INTO Reservations (UserId, DeviceId, StartAAtUtc, DurationMinutes, Note) VALUES (?,?,?,?,?)",
       [userId, devId, startAtUtc, durationMinutes, status ?? "Created"]
     );
     res.status(201).json({ id: r.insertId });
@@ -438,8 +438,8 @@ app.put("/api/reservations/:id", requireAuth, async (req, res) => {
     const durationMinutes = Math.max(0, Math.round((end.getTime() - start.getTime()) / 60_000));
 
     const sql = isAdmin
-      ? "UPDATE Reservations SET StartAtUtc=?, DurationMinutes=?, Note=? WHERE Id=?"
-      : "UPDATE Reservations SET StartAtUtc=?, DurationMinutes=?, Note=? WHERE Id=? AND UserId=?";
+      ? "UPDATE Reservations SET StartAAtUtc=?, DurationMinutes=?, Note=? WHERE Id=?"
+      : "UPDATE Reservations SET StartAAtUtc=?, DurationMinutes=?, Note=? WHERE Id=? AND UserId=?";
     const args = isAdmin
       ? [startAtUtc, durationMinutes, String(status), id]
       : [startAtUtc, durationMinutes, String(status), id, userId];
