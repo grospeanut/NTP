@@ -118,6 +118,25 @@ function toId(x) {
   return Number.isFinite(n) ? n : null;
 }
 
+function toMySqlDateTimeUtc(value) {
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return null;
+  const pad = (n) => String(n).padStart(2, "0");
+  return (
+    d.getUTCFullYear() +
+    "-" +
+    pad(d.getUTCMonth() + 1) +
+    "-" +
+    pad(d.getUTCDate()) +
+    " " +
+    pad(d.getUTCHours()) +
+    ":" +
+    pad(d.getUTCMinutes()) +
+    ":" +
+    pad(d.getUTCSeconds())
+  );
+}
+
 // -------------------- API --------------------
 const app = express();
 app.use(express.json());
@@ -435,13 +454,23 @@ app.post("/api/reservations", requireAuth, async (req, res) => {
     }
     const durationMinutes = Math.max(0, Math.round((end.getTime() - start.getTime()) / 60_000));
 
+    const startDb = toMySqlDateTimeUtc(startAtUtc);
+    if (!startDb) return res.status(400).json({ error: "Invalid startAtUtc" });
+
     const [r] = await pool.query(
       `INSERT INTO Reservations (UserId, DeviceId, ${startCol}, DurationMinutes, Note) VALUES (?,?,?,?,?)`,
-      [userId, devId, startAtUtc, durationMinutes, status ?? "Created"]
+      [userId, devId, startDb, durationMinutes, status ?? "Created"]
     );
     res.status(201).json({ id: r.insertId });
   } catch (e) {
-    res.status(500).json({ error: "Failed to create reservation", detail: String(e?.message ?? e) });
+    console.error("Create reservation failed", e);
+    res.status(500).json({
+      error: "Failed to create reservation",
+      detail: String(e?.message ?? e),
+      code: e?.code,
+      errno: e?.errno,
+      sqlState: e?.sqlState
+    });
   }
 });
 
@@ -465,18 +494,28 @@ app.put("/api/reservations/:id", requireAuth, async (req, res) => {
     }
     const durationMinutes = Math.max(0, Math.round((end.getTime() - start.getTime()) / 60_000));
 
+    const startDb = toMySqlDateTimeUtc(startAtUtc);
+    if (!startDb) return res.status(400).json({ error: "Invalid startAtUtc" });
+
     const sql = isAdmin
       ? `UPDATE Reservations SET ${startCol}=?, DurationMinutes=?, Note=? WHERE Id=?`
       : `UPDATE Reservations SET ${startCol}=?, DurationMinutes=?, Note=? WHERE Id=? AND UserId=?`;
     const args = isAdmin
-      ? [startAtUtc, durationMinutes, String(status), id]
-      : [startAtUtc, durationMinutes, String(status), id, userId];
+      ? [startDb, durationMinutes, String(status), id]
+      : [startDb, durationMinutes, String(status), id, userId];
 
     const [r] = await pool.query(sql, args);
     if (r.affectedRows === 0) return res.sendStatus(404);
     res.sendStatus(204);
   } catch (e) {
-    res.status(500).json({ error: "Failed to update reservation", detail: String(e?.message ?? e) });
+    console.error("Update reservation failed", e);
+    res.status(500).json({
+      error: "Failed to update reservation",
+      detail: String(e?.message ?? e),
+      code: e?.code,
+      errno: e?.errno,
+      sqlState: e?.sqlState
+    });
   }
 });
 
