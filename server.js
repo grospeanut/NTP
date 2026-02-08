@@ -25,6 +25,18 @@ function parseMySqlCs(cs) {
     parts[k.trim().toLowerCase()] = rest.join("=").trim();
   }
 
+  const host = parts.server ?? parts.host ?? "127.0.0.1";
+  const port = Number(parts.port ?? 3306);
+  const database = parts.database;
+  const user = parts.user ?? parts.uid ?? parts.username;
+  const password = parts.password ?? "";
+
+  if (!database) throw new Error("Connection string missing Database=...");
+  if (!user) throw new Error("Connection string missing User=...");
+
+  return { host, port, database, user, password };
+}
+
 async function getUsersUsernameColumnName() {
   const [rows] = await pool.query(
     "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME='Users' AND COLUMN_NAME IN ('Username','UserName','username','userName')"
@@ -46,18 +58,6 @@ async function usersUsernameCol() {
     _usersUsernameCol = "Username";
   }
   return _usersUsernameCol;
-}
-
-  const host = parts.server ?? parts.host ?? "127.0.0.1";
-  const port = Number(parts.port ?? 3306);
-  const database = parts.database;
-  const user = parts.user ?? parts.uid ?? parts.username;
-  const password = parts.password ?? "";
-
-  if (!database) throw new Error("Connection string missing Database=...");
-  if (!user) throw new Error("Connection string missing User=...");
-
-  return { host, port, database, user, password };
 }
 
 const pool = mysql.createPool({
