@@ -404,7 +404,10 @@ app.get("/api/reservations", requireAuth, async (_req, res) => {
 
   const [rows] = isAdmin
     ? await pool.query(
-        `SELECT Id, UserId, DeviceId, ${startCol} AS StartAtUtc, DurationMinutes, Note FROM Reservations ORDER BY ${startCol} DESC`
+        `SELECT r.Id, r.UserId, u.Username AS Username, r.DeviceId, r.${startCol} AS StartAtUtc, r.DurationMinutes, r.Note
+         FROM Reservations r
+         LEFT JOIN Users u ON u.Id = r.UserId
+         ORDER BY r.${startCol} DESC`
       )
     : await pool.query(
         `SELECT Id, UserId, DeviceId, ${startCol} AS StartAtUtc, DurationMinutes, Note FROM Reservations WHERE UserId=? ORDER BY ${startCol} DESC`,
@@ -416,7 +419,7 @@ app.get("/api/reservations", requireAuth, async (_req, res) => {
     const durationMinutes = Number(r.DurationMinutes ?? 0);
     const end = new Date(start.getTime() + durationMinutes * 60_000);
 
-    return {
+    const dto = {
       Id: r.Id,
       UserId: r.UserId,
       DeviceId: r.DeviceId,
@@ -424,6 +427,11 @@ app.get("/api/reservations", requireAuth, async (_req, res) => {
       EndAtUtc: end.toISOString(),
       Status: typeof r.Note === "string" && r.Note.length > 0 ? r.Note : "Created"
     };
+
+    if (isAdmin && typeof r.Username === "string")
+      dto.Username = r.Username;
+
+    return dto;
   });
 
   res.json(normalized);
