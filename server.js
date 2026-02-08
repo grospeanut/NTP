@@ -404,7 +404,7 @@ app.get("/api/reservations", requireAuth, async (_req, res) => {
 
   const [rows] = isAdmin
     ? await pool.query(
-        `SELECT r.Id, r.UserId, u.\`Username\` AS Username, r.DeviceId, r.${startCol} AS StartAtUtc, r.DurationMinutes, r.Note
+        `SELECT r.Id, r.UserId, u.\`Username\` AS Username, u.\`Role\` AS UserRole, r.DeviceId, r.${startCol} AS StartAtUtc, r.DurationMinutes, r.Note
          FROM Reservations r
          LEFT JOIN Users u ON u.Id = r.UserId
          ORDER BY r.${startCol} DESC`
@@ -429,7 +429,10 @@ app.get("/api/reservations", requireAuth, async (_req, res) => {
     };
 
     if (isAdmin && typeof r.Username === "string")
-      dto.Username = r.Username;
+      dto.Username = String(r.Username);
+
+    if (isAdmin && typeof r.UserRole === "string")
+      dto.UserRole = r.UserRole;
 
     return dto;
   });
