@@ -45,6 +45,31 @@ const pool = mysql.createPool({
   idleTimeout: 60_000
 });
 
+// -------------------- Schema helpers --------------------
+async function getReservationStartColumnName() {
+  // Different environments may have different column names (typos/migrations).
+  // Prefer the intended name, fall back to known typo.
+  const [rows] = await pool.query(
+    "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME='Reservations' AND COLUMN_NAME IN ('StartAtUtc','StartAAtUtc')"
+  );
+  const names = new Set((rows ?? []).map((r) => r.COLUMN_NAME));
+  if (names.has("StartAtUtc")) return "StartAtUtc";
+  if (names.has("StartAAtUtc")) return "StartAAtUtc";
+  // last resort: keep prior behavior
+  return "StartAtUtc";
+}
+
+let _reservationStartCol;
+async function reservationStartCol() {
+  if (_reservationStartCol) return _reservationStartCol;
+  try {
+    _reservationStartCol = await getReservationStartColumnName();
+  } catch {
+    _reservationStartCol = "StartAtUtc";
+  }
+  return _reservationStartCol;
+}
+
 // -------------------- Auth helpers --------------------
 function signToken(user) {
   return jwt.sign(
@@ -353,21 +378,22 @@ app.delete("/api/devices/:id", requireAuth, requireRole("Admin"), async (req, re
 
 // Reservations (read for authenticated user; create for authenticated user; delete for Admin)
 app.get("/api/reservations", requireAuth, async (_req, res) => {
+  const startCol = await reservationStartCol();
   const isAdmin = _req.user?.role === "Admin";
   const userId = toId(_req.user?.sub);
   if (!isAdmin && !userId) return res.status(401).json({ error: "Invalid token" });
 
   const [rows] = isAdmin
     ? await pool.query(
-        "SELECT Id, UserId, DeviceId, StartAAtUtc, DurationMinutes, Note FROM Reservations ORDER BY StartAAtUtc DESC"
+        `SELECT Id, UserId, DeviceId, ${startCol} AS StartAtUtc, DurationMinutes, Note FROM Reservations ORDER BY ${startCol} DESC`
       )
     : await pool.query(
-        "SELECT Id, UserId, DeviceId, StartAAtUtc, DurationMinutes, Note FROM Reservations WHERE UserId=? ORDER BY StartAAtUtc DESC",
+        `SELECT Id, UserId, DeviceId, ${startCol} AS StartAtUtc, DurationMinutes, Note FROM Reservations WHERE UserId=? ORDER BY ${startCol} DESC`,
         [userId]
       );
 
   const normalized = (rows ?? []).map((r) => {
-    const start = new Date(r.StartAAtUtc);
+    const start = new Date(r.StartAtUtc);
     const durationMinutes = Number(r.DurationMinutes ?? 0);
     const end = new Date(start.getTime() + durationMinutes * 60_000);
 
@@ -385,6 +411,7 @@ app.get("/api/reservations", requireAuth, async (_req, res) => {
 });
 
 app.post("/api/reservations", requireAuth, async (req, res) => {
+  const startCol = await reservationStartCol();
   const { deviceId, startAtUtc, endAtUtc, status } = req.body ?? {};
   const devId = toId(deviceId);
   const userId = toId(req.user.sub);
@@ -409,7 +436,7 @@ app.post("/api/reservations", requireAuth, async (req, res) => {
     const durationMinutes = Math.max(0, Math.round((end.getTime() - start.getTime()) / 60_000));
 
     const [r] = await pool.query(
-      "INSERT INTO Reservations (UserId, DeviceId, StartAAtUtc, DurationMinutes, Note) VALUES (?,?,?,?,?)",
+      `INSERT INTO Reservations (UserId, DeviceId, ${startCol}, DurationMinutes, Note) VALUES (?,?,?,?,?)`,
       [userId, devId, startAtUtc, durationMinutes, status ?? "Created"]
     );
     res.status(201).json({ id: r.insertId });
@@ -419,6 +446,7 @@ app.post("/api/reservations", requireAuth, async (req, res) => {
 });
 
 app.put("/api/reservations/:id", requireAuth, async (req, res) => {
+  const startCol = await reservationStartCol();
   const id = toId(req.params.id);
   if (!id) return res.status(400).json({ error: "Invalid id" });
   const { startAtUtc, endAtUtc, status } = req.body ?? {};
@@ -438,8 +466,8 @@ app.put("/api/reservations/:id", requireAuth, async (req, res) => {
     const durationMinutes = Math.max(0, Math.round((end.getTime() - start.getTime()) / 60_000));
 
     const sql = isAdmin
-      ? "UPDATE Reservations SET StartAAtUtc=?, DurationMinutes=?, Note=? WHERE Id=?"
-      : "UPDATE Reservations SET StartAAtUtc=?, DurationMinutes=?, Note=? WHERE Id=? AND UserId=?";
+      ? `UPDATE Reservations SET ${startCol}=?, DurationMinutes=?, Note=? WHERE Id=?`
+      : `UPDATE Reservations SET ${startCol}=?, DurationMinutes=?, Note=? WHERE Id=? AND UserId=?`;
     const args = isAdmin
       ? [startAtUtc, durationMinutes, String(status), id]
       : [startAtUtc, durationMinutes, String(status), id, userId];
