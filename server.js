@@ -2,6 +2,8 @@ import express from "express";
 import jwt from "jsonwebtoken";
 import mysql from "mysql2/promise";
 
+// Node 18+ provides a global fetch implementation.
+
 // NOTE: For simple local/WPF testing you may also need CORS.
 
 // -------------------- Hardcoded config (EDIT THESE) --------------------
@@ -15,6 +17,10 @@ const JWT_ISSUER = "NaprednoApi";
 const JWT_AUDIENCE = "NaprednoClients";
 
 const PORT = Number(process.env.PORT ?? 3000);
+
+// Concrete asset (device manual) to download via API.
+const DEVICE_MANUAL_URL =
+  "https://koncar-ka.hr/wp-content/uploads/2021/08/Upute-za-uporabu-PS1486MDCBN-HR_EN.pdf";
 
 // -------------------- MySQL connection --------------------
 function parseMySqlCs(cs) {
@@ -543,5 +549,40 @@ app.delete("/api/reservations/:id", requireAuth, requireRole("Admin"), async (re
 });
 
 app.get("/health", (_req, res) => res.json({ ok: true }));
+
+// Download: proxy a concrete device manual PDF behind authentication.
+// This keeps client downloads stable (same origin) and avoids CORS issues.
+app.get("/api/assets/device-manual", requireAuth, async (_req, res) => {
+  try {
+    const upstream = await fetch(DEVICE_MANUAL_URL, {
+      redirect: "follow"
+    });
+
+    if (!upstream.ok || !upstream.body) {
+      return res.status(502).json({
+        error: "Failed to fetch manual",
+        status: upstream.status,
+        statusText: upstream.statusText
+      });
+    }
+
+    res.setHeader(
+      "Content-Type",
+      upstream.headers.get("content-type") ?? "application/pdf"
+    );
+    const len = upstream.headers.get("content-length");
+    if (len) res.setHeader("Content-Length", len);
+    res.setHeader(
+      "Content-Disposition",
+      "attachment; filename=Upute-za-uporabu-PS1486MDCBN-HR_EN.pdf"
+    );
+
+    // Convert Web ReadableStream to Node stream and pipe to response.
+    const { Readable } = await import("node:stream");
+    Readable.fromWeb(upstream.body).pipe(res);
+  } catch (e) {
+    res.status(500).json({ error: "Manual download failed", detail: String(e?.message ?? e) });
+  }
+});
 
 app.listen(PORT, () => console.log(`API running on http://localhost:${PORT}`));
