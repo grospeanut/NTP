@@ -349,20 +349,45 @@ app.get("/api/devices", requireAuth, async (_req, res) => {
   res.json(normalized);
 });
 
+// Device image (BLOB) download
+app.get("/api/devices/:id/image", requireAuth, async (req, res) => {
+  const id = toId(req.params.id);
+  if (!id) return res.status(400).json({ error: "Invalid id" });
+
+  try {
+    const [rows] = await pool.query(
+      "SELECT ImageBlob FROM Devices WHERE Id=? LIMIT 1",
+      [id]
+    );
+    const img = rows?.[0]?.ImageBlob;
+    if (!img) return res.sendStatus(404);
+
+    res.setHeader("Content-Type", "image/png");
+    return res.send(img);
+  } catch (e) {
+    return res.status(500).json({ error: "Failed to load device image" });
+  }
+});
+
 app.post("/api/devices", requireAuth, requireRole("Admin"), async (req, res) => {
-  const { locationId, name, type, capacityKg, pricePerWash, isActive } = req.body ?? {};
+  const { locationId, name, type, capacityKg, pricePerWash, isActive, imageBase64 } = req.body ?? {};
   const locId = toId(locationId);
   if (!locId || !name || !type) return res.status(400).json({ error: "locationId,name,type required" });
   try {
+    const img =
+      typeof imageBase64 === "string" && imageBase64.length > 0
+        ? Buffer.from(imageBase64, "base64")
+        : null;
     const [r] = await pool.query(
-      "INSERT INTO Devices (LocationId, Name, Type, CapacityKg, PricePerWash, IsActive) VALUES (?,?,?,?,?,?)",
+      "INSERT INTO Devices (LocationId, Name, Type, CapacityKg, PricePerWash, IsActive, ImageBlob) VALUES (?,?,?,?,?,?,?)",
       [
         locId,
         String(name),
         String(type),
         capacityKg ?? null,
         pricePerWash ?? null,
-        isActive ?? true
+        isActive ?? true,
+        img
       ]
     );
     res.status(201).json({ id: r.insertId });
@@ -374,13 +399,22 @@ app.post("/api/devices", requireAuth, requireRole("Admin"), async (req, res) => 
 app.put("/api/devices/:id", requireAuth, requireRole("Admin"), async (req, res) => {
   const id = toId(req.params.id);
   if (!id) return res.status(400).json({ error: "Invalid id" });
-  const { locationId, name, type, capacityKg, pricePerWash, isActive } = req.body ?? {};
+  const { locationId, name, type, capacityKg, pricePerWash, isActive, imageBase64 } = req.body ?? {};
   const locId = toId(locationId);
   if (!locId || !name || !type) return res.status(400).json({ error: "locationId,name,type required" });
   try {
+    const img =
+      typeof imageBase64 === "string" && imageBase64.length > 0
+        ? Buffer.from(imageBase64, "base64")
+        : undefined;
+
     const [r] = await pool.query(
-      "UPDATE Devices SET LocationId=?, Name=?, Type=?, CapacityKg=?, PricePerWash=?, IsActive=? WHERE Id=?",
-      [locId, String(name), String(type), capacityKg ?? null, pricePerWash ?? null, isActive ?? true, id]
+      img === undefined
+        ? "UPDATE Devices SET LocationId=?, Name=?, Type=?, CapacityKg=?, PricePerWash=?, IsActive=? WHERE Id=?"
+        : "UPDATE Devices SET LocationId=?, Name=?, Type=?, CapacityKg=?, PricePerWash=?, IsActive=?, ImageBlob=? WHERE Id=?",
+      img === undefined
+        ? [locId, String(name), String(type), capacityKg ?? null, pricePerWash ?? null, isActive ?? true, id]
+        : [locId, String(name), String(type), capacityKg ?? null, pricePerWash ?? null, isActive ?? true, img, id]
     );
     if (r.affectedRows === 0) return res.sendStatus(404);
     res.sendStatus(204);
