@@ -3,6 +3,9 @@ import jwt from "jsonwebtoken";
 import mysql from "mysql2/promise";
 import crypto from "node:crypto";
 
+// Load environment variables from .env if present.
+import "dotenv/config";
+
 // Node 18+ provides a global fetch implementation.
 
 // NOTE: For simple local/WPF testing you may also need CORS.
@@ -10,17 +13,18 @@ import crypto from "node:crypto";
 // -------------------- Hardcoded config (EDIT THESE) --------------------
 // Same format as your C# `Data/Db.cs` uses.
 const MYSQL_CONNECTION_STRING =
+  process.env.MYSQL_CONNECTION_STRING ??
   "Server=188.245.158.246;Port=3306;Database=NTP;User=root;Password=wtEgR59qxb1BcaPp8XZxnC93Bg2vNvpQmOvwhQylm5Iq3HAEz5d4NoZnWI7C7mM0;SslMode=Preferred;";
 
 // JWT secret hardcoded too (EDIT THIS)
-const JWT_SECRET = "wQ6rW4FcdskPAGPurjPMT8u4r4UnvaCH";
-const JWT_ISSUER = "NaprednoApi";
-const JWT_AUDIENCE = "NaprednoClients";
+const JWT_SECRET = process.env.JWT_SECRET ?? "wQ6rW4FcdskPAGPurjPMT8u4r4UnvaCH";
+const JWT_ISSUER = process.env.JWT_ISSUER ?? "NaprednoApi";
+const JWT_AUDIENCE = process.env.JWT_AUDIENCE ?? "NaprednoClients";
 
 // -------------------- Hashing config (salt + pepper) --------------------
 // This is a server-only secret (DO NOT store in DB). For demo simplicity it's hardcoded,
 // in real apps it should come from an environment variable.
-const PEPPER_SECRET = "NTP_PEPPER_v1";
+const PEPPER_SECRET = process.env.PEPPER_SECRET ?? "NTP_PEPPER_v1";
 
 // Demonstration pepper search-space ("cijeli niz mogućih vrijednosti").
 // Server will try these candidate peppers on login until one matches.
