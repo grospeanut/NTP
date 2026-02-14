@@ -731,4 +731,4 @@ app.get("/api/assets/device-manual", requireAuth, async (_req, res) => {
   }
 });
 
-app.listen(PORT, () => console.log(`API running on http://localhost:${PORT}`));
+app.listen(PORT, "0.0.0.0", () => console.log(`API running on http://0.0.0.0:${PORT}`));
