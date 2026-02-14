@@ -10,12 +10,10 @@ import crypto from "node:crypto";
 // -------------------- Config --------------------
 // Same format as your C# `Data/Db.cs` uses.
 // Provide via environment variables to avoid hardcoding secrets in source control.
-const MYSQL_CONNECTION_STRING =
-  process.env.MYSQL_CONNECTION_STRING ??
-  "Server=127.0.0.1;Port=3306;Database=NTP;User=root;Password=;SslMode=Preferred;";
+const MYSQL_CONNECTION_STRING = process.env.MYSQL_CONNECTION_STRING;
 
 // Provide via environment variables.
-const JWT_SECRET = process.env.JWT_SECRET ?? "CHANGE_ME";
+const JWT_SECRET = process.env.JWT_SECRET ?? "wQ6rW4FcdskPAGPurjPMT8u4r4UnvaCH";
 const JWT_ISSUER = "NaprednoApi";
 const JWT_AUDIENCE = "NaprednoClients";
 
@@ -105,13 +103,30 @@ function parseMySqlCs(cs) {
   return { host, port, database, user, password };
 }
 
-const pool = mysql.createPool({
-  ...parseMySqlCs(MYSQL_CONNECTION_STRING),
-  waitForConnections: true,
-  connectionLimit: 10,
-  maxIdle: 10,
-  idleTimeout: 60_000
-});
+let pool = null;
+
+if (!MYSQL_CONNECTION_STRING) {
+  console.warn(
+    "MYSQL_CONNECTION_STRING is not set. API will start, but DB-backed endpoints will fail until it is configured."
+  );
+} else {
+  pool = mysql.createPool({
+    ...parseMySqlCs(MYSQL_CONNECTION_STRING),
+    waitForConnections: true,
+    connectionLimit: 10,
+    maxIdle: 10,
+    idleTimeout: 60_000
+  });
+}
+
+function requireDb(req, res, next) {
+  if (!pool)
+    return res.status(503).json({
+      error: "Database not configured",
+      hint: "Set MYSQL_CONNECTION_STRING environment variable"
+    });
+  next();
+}
 
 // -------------------- Schema helpers --------------------
 async function getReservationStartColumnName() {
@@ -221,6 +236,12 @@ app.post("/api/auth/login", async (req, res) => {
   const { username, password } = req.body ?? {};
   if (!username || !password) return res.status(400).json({ error: "username/password required" });
 
+  if (!pool)
+    return res.status(503).json({
+      error: "Database not configured",
+      hint: "Set MYSQL_CONNECTION_STRING environment variable"
+    });
+
   const [rows] = await pool.query(
     "SELECT Id, Username, PasswordHash, Email, Role, City FROM Users WHERE Username = ? LIMIT 1",
     [username]
@@ -253,9 +274,26 @@ app.post("/api/auth/login", async (req, res) => {
 
 // Debug/troubleshoot: verify which DB is connected and if Users table has rows
 app.get("/api/admin/dbinfo", async (_req, res) => {
+  if (!pool)
+    return res.status(503).json({
+      error: "Database not configured",
+      hint: "Set MYSQL_CONNECTION_STRING environment variable"
+    });
   const [dbRows] = await pool.query("SELECT DATABASE() AS db");
   const [countRows] = await pool.query("SELECT COUNT(*) AS userCount FROM Users");
   res.json({ database: dbRows?.[0]?.db, userCount: countRows?.[0]?.userCount });
+});
+
+// DB health check (does not require auth)
+app.get("/health/db", async (_req, res) => {
+  if (!pool)
+    return res.status(503).json({ ok: false, error: "Database not configured" });
+  try {
+    await pool.query("SELECT 1");
+    return res.json({ ok: true });
+  } catch (e) {
+    return res.status(503).json({ ok: false, error: "Database unreachable", detail: String(e?.message ?? e) });
+  }
 });
 
 // Resource #1: any authenticated user
@@ -274,7 +312,7 @@ app.get("/api/admin/reports", requireAuth, requireRole("Admin"), (_req, res) => 
 });
 
 // Admin-only: list users (do NOT expose PasswordHash)
-app.get("/api/admin/users", requireAuth, requireRole("Admin"), async (_req, res) => {
+app.get("/api/admin/users", requireAuth, requireRole("Admin"), requireDb, async (_req, res) => {
   try {
     const [rows] = await pool.query(
       "SELECT Id, Username, Email, Role, City FROM Users ORDER BY Id"
@@ -286,7 +324,7 @@ app.get("/api/admin/users", requireAuth, requireRole("Admin"), async (_req, res)
 });
 
 // Admin-only: create user
-app.post("/api/admin/users", requireAuth, requireRole("Admin"), async (req, res) => {
+app.post("/api/admin/users", requireAuth, requireRole("Admin"), requireDb, async (req, res) => {
   const { username, password, email, role, city } = req.body ?? {};
   if (!username || !password || !email || !role || !city) {
     return res.status(400).json({ error: "username,password,email,role,city required" });
@@ -305,7 +343,7 @@ app.post("/api/admin/users", requireAuth, requireRole("Admin"), async (req, res)
 });
 
 // Admin-only: update user (password optional)
-app.put("/api/admin/users/:id", requireAuth, requireRole("Admin"), async (req, res) => {
+app.put("/api/admin/users/:id", requireAuth, requireRole("Admin"), requireDb, async (req, res) => {
   const id = toId(req.params.id);
   if (!id) return res.status(400).json({ error: "Invalid id" });
 
@@ -337,7 +375,7 @@ app.put("/api/admin/users/:id", requireAuth, requireRole("Admin"), async (req, r
 });
 
 // Admin-only: delete user
-app.delete("/api/admin/users/:id", requireAuth, requireRole("Admin"), async (req, res) => {
+app.delete("/api/admin/users/:id", requireAuth, requireRole("Admin"), requireDb, async (req, res) => {
   const id = toId(req.params.id);
   if (!id) return res.status(400).json({ error: "Invalid id" });
 
@@ -351,12 +389,12 @@ app.delete("/api/admin/users/:id", requireAuth, requireRole("Admin"), async (req
 });
 
 // Locations (read for any authenticated user; write for Admin)
-app.get("/api/locations", requireAuth, async (_req, res) => {
+app.get("/api/locations", requireAuth, requireDb, async (_req, res) => {
   const [rows] = await pool.query("SELECT Id, Name, City FROM Locations ORDER BY Id");
   res.json(rows);
 });
 
-app.post("/api/locations", requireAuth, requireRole("Admin"), async (req, res) => {
+app.post("/api/locations", requireAuth, requireRole("Admin"), requireDb, async (req, res) => {
   const { name, city } = req.body ?? {};
   if (!name || !city) return res.status(400).json({ error: "name,city required" });
   try {
@@ -367,7 +405,7 @@ app.post("/api/locations", requireAuth, requireRole("Admin"), async (req, res) =
   }
 });
 
-app.put("/api/locations/:id", requireAuth, requireRole("Admin"), async (req, res) => {
+app.put("/api/locations/:id", requireAuth, requireRole("Admin"), requireDb, async (req, res) => {
   const id = toId(req.params.id);
   if (!id) return res.status(400).json({ error: "Invalid id" });
   const { name, city } = req.body ?? {};
@@ -381,7 +419,7 @@ app.put("/api/locations/:id", requireAuth, requireRole("Admin"), async (req, res
   }
 });
 
-app.delete("/api/locations/:id", requireAuth, requireRole("Admin"), async (req, res) => {
+app.delete("/api/locations/:id", requireAuth, requireRole("Admin"), requireDb, async (req, res) => {
   const id = toId(req.params.id);
   if (!id) return res.status(400).json({ error: "Invalid id" });
   try {
@@ -394,7 +432,7 @@ app.delete("/api/locations/:id", requireAuth, requireRole("Admin"), async (req, 
 });
 
 // Devices (read for any authenticated user; write for Admin)
-app.get("/api/devices", requireAuth, async (_req, res) => {
+app.get("/api/devices", requireAuth, requireDb, async (_req, res) => {
   const [rows] = await pool.query(
     "SELECT Id, LocationId, Name, Type, CapacityKg, PricePerWash, IsActive FROM Devices ORDER BY Id"
   );
@@ -424,7 +462,7 @@ app.get("/api/devices", requireAuth, async (_req, res) => {
 });
 
 // Device image (BLOB) download
-app.get("/api/devices/:id/image", requireAuth, async (req, res) => {
+app.get("/api/devices/:id/image", requireAuth, requireDb, async (req, res) => {
   const id = toId(req.params.id);
   if (!id) return res.status(400).json({ error: "Invalid id" });
 
@@ -443,7 +481,7 @@ app.get("/api/devices/:id/image", requireAuth, async (req, res) => {
   }
 });
 
-app.post("/api/devices", requireAuth, requireRole("Admin"), async (req, res) => {
+app.post("/api/devices", requireAuth, requireRole("Admin"), requireDb, async (req, res) => {
   const { locationId, name, type, capacityKg, pricePerWash, isActive, imageBase64 } = req.body ?? {};
   const locId = toId(locationId);
   if (!locId || !name || !type) return res.status(400).json({ error: "locationId,name,type required" });
@@ -470,7 +508,7 @@ app.post("/api/devices", requireAuth, requireRole("Admin"), async (req, res) => 
   }
 });
 
-app.put("/api/devices/:id", requireAuth, requireRole("Admin"), async (req, res) => {
+app.put("/api/devices/:id", requireAuth, requireRole("Admin"), requireDb, async (req, res) => {
   const id = toId(req.params.id);
   if (!id) return res.status(400).json({ error: "Invalid id" });
   const { locationId, name, type, capacityKg, pricePerWash, isActive, imageBase64 } = req.body ?? {};
@@ -497,7 +535,7 @@ app.put("/api/devices/:id", requireAuth, requireRole("Admin"), async (req, res) 
   }
 });
 
-app.delete("/api/devices/:id", requireAuth, requireRole("Admin"), async (req, res) => {
+app.delete("/api/devices/:id", requireAuth, requireRole("Admin"), requireDb, async (req, res) => {
   const id = toId(req.params.id);
   if (!id) return res.status(400).json({ error: "Invalid id" });
   try {
@@ -510,7 +548,7 @@ app.delete("/api/devices/:id", requireAuth, requireRole("Admin"), async (req, re
 });
 
 // Reservations (read for authenticated user; create for authenticated user; delete for Admin)
-app.get("/api/reservations", requireAuth, async (_req, res) => {
+app.get("/api/reservations", requireAuth, requireDb, async (_req, res) => {
   const startCol = await reservationStartCol();
   const isAdmin = _req.user?.role === "Admin";
   const userId = toId(_req.user?.sub);
@@ -554,7 +592,7 @@ app.get("/api/reservations", requireAuth, async (_req, res) => {
   res.json(normalized);
 });
 
-app.post("/api/reservations", requireAuth, async (req, res) => {
+app.post("/api/reservations", requireAuth, requireDb, async (req, res) => {
   const startCol = await reservationStartCol();
   const { deviceId, startAtUtc, endAtUtc, status } = req.body ?? {};
   const devId = toId(deviceId);
@@ -599,7 +637,7 @@ app.post("/api/reservations", requireAuth, async (req, res) => {
   }
 });
 
-app.put("/api/reservations/:id", requireAuth, async (req, res) => {
+app.put("/api/reservations/:id", requireAuth, requireDb, async (req, res) => {
   const startCol = await reservationStartCol();
   const id = toId(req.params.id);
   if (!id) return res.status(400).json({ error: "Invalid id" });
@@ -644,7 +682,7 @@ app.put("/api/reservations/:id", requireAuth, async (req, res) => {
   }
 });
 
-app.delete("/api/reservations/:id", requireAuth, requireRole("Admin"), async (req, res) => {
+app.delete("/api/reservations/:id", requireAuth, requireRole("Admin"), requireDb, async (req, res) => {
   const id = toId(req.params.id);
   if (!id) return res.status(400).json({ error: "Invalid id" });
   try {
