@@ -7,13 +7,15 @@ import crypto from "node:crypto";
 
 // NOTE: For simple local/WPF testing you may also need CORS.
 
-// -------------------- Hardcoded config (EDIT THESE) --------------------
+// -------------------- Config --------------------
 // Same format as your C# `Data/Db.cs` uses.
+// Provide via environment variables to avoid hardcoding secrets in source control.
 const MYSQL_CONNECTION_STRING =
-  "Server=188.245.158.246;Port=3306;Database=NTP;User=root;Password=wtEgR59qxb1BcaPp8XZxnC93Bg2vNvpQmOvwhQylm5Iq3HAEz5d4NoZnWI7C7mM0;SslMode=Preferred;";
+  process.env.MYSQL_CONNECTION_STRING ??
+  "Server=127.0.0.1;Port=3306;Database=NTP;User=root;Password=;SslMode=Preferred;";
 
-// JWT secret hardcoded too (EDIT THIS)
-const JWT_SECRET = "wQ6rW4FcdskPAGPurjPMT8u4r4UnvaCH";
+// Provide via environment variables.
+const JWT_SECRET = process.env.JWT_SECRET ?? "CHANGE_ME";
 const JWT_ISSUER = "NaprednoApi";
 const JWT_AUDIENCE = "NaprednoClients";
 
