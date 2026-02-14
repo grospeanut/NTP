@@ -104,7 +104,13 @@ function parseMySqlCs(cs) {
   if (!database) throw new Error("Connection string missing Database=...");
   if (!user) throw new Error("Connection string missing User=...");
 
-  return { host, port, database, user, password };
+  return {
+    host: process.env.MYSQL_HOST ?? host,
+    port: Number(process.env.MYSQL_PORT ?? port),
+    database: process.env.MYSQL_DATABASE ?? database,
+    user: process.env.MYSQL_USER ?? user,
+    password: process.env.MYSQL_PASSWORD ?? password
+  };
 }
 
 const pool = mysql.createPool({
